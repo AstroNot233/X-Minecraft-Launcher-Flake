@@ -32,7 +32,7 @@
           };
         };
         launchArg = mkOption {
-          type = with lib.types; listOf string;
+          type = with lib.types; listOf str;
           default = [];
           description = ''
             Launch options to be passed to XMCL.
@@ -48,7 +48,7 @@
         xdg.desktopEntries.xmcl = {
           categories = [ "Game" ];
           exec = "xmcl";
-          icon = fetchurl {
+          icon = pkgs.fetchurl {
             url = "https://raw.githubusercontent.com/Voxelum/x-minecraft-launcher/master/xmcl-electron-app/icons/dark%40StoreLogo.png";
             hash = "sha256:0acf82939cb10d69fcda2c90feb98048059d54fcde31f6b55740852cc66143b7";
           };
