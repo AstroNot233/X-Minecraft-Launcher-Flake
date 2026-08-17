@@ -12,7 +12,7 @@
         packages = forAllSystems (system:
           { default = nixpkgs.legacyPackages.${system}.callPackage ./enwrap.nix {}; }
         );
-        homeModules.xmcl = import ./home-module.nix { inherit self; };
+        homeModules = import ./home-module.nix { inherit self; };
       }
   );
 }
