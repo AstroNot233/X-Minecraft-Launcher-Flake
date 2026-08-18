@@ -28,6 +28,9 @@
         wayland
         udev          # oshi
         vulkan-loader # VulkanMod's lwjglt
+        flite
+        gamemode
+        libusb1
       ];
       profile = ''
         set -o allexport
