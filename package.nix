@@ -6,18 +6,18 @@
 }:
 stdenv.mkDerivation rec {
   pname = "xmcl";
-  version = "0.66.2";
+  version = "0.67.0";
   src = (
     let
       base = "https://github.com/Voxelum/x-minecraft-launcher/releases/download/v${version}";
       gzs = {
         x86_64-linux = {
           url = "${base}/app-${version}-linux.asar.gz";
-          hash = "sha256:9b2f84dce18526f56a82649d6aba0dbb9811a9251b4c3c27cc677274f1dab046";
+          hash = "sha256:529d0bdd9f0f39e7881969629b131b2681c01ab9333e320fd5cd2006689a3cb5";
         };
         aarch64-linux = {
           url = "${base}/app-${version}-linux-arm64.asar.gz";
-          hash = "sha256:534a9fa9a276e98214dea2ad64217445e7b7f3351ce08d2b9f5313472041a2e7";
+          hash = "sha256:fe5464d403feedbcd92cb6a889e053afffbafcac986ba57da698aa4dd55a3086";
         };
       };
       sys = stdenv.hostPlatform.system;
