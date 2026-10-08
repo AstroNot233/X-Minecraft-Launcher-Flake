@@ -206,6 +206,42 @@ jobs:
         if: steps.apply.outputs.changed == 'true'
         run: nix build --dry-run .#default
 
+      - name: Refresh the readme dashboard
+        if: steps.apply.outputs.changed == 'true'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          hash_of() {
+            grep -F -A1 -- "-$1.asar.gz" xmcl.nix |
+              sed -n 's/.*hash = "\([^"]*\)";.*/\1/p' | head -n1
+          }
+          x86=$(hash_of linux) || true
+          arm=$(hash_of linux-arm64) || true
+          [ -n "$x86" ] && [ -n "$arm" ] || { echo "cannot read both hashes" >&2; exit 1; }
+
+          base=https://github.com/Voxelum/x-minecraft-launcher/releases
+          block=$(printf '%s\n' \
+            "" \
+            "**${VERSION}** · [upstream release \`v${VERSION}\`](${base}/tag/v${VERSION}) · updated $(date -u +%F)" \
+            "" \
+            "| System | Source hash | Artifact |" \
+            "| --- | --- | --- |" \
+            "| \`x86_64-linux\` | ✅ \`${x86}\` | [\`app-${VERSION}-linux.asar.gz\`](${base}/download/v${VERSION}/app-${VERSION}-linux.asar.gz) |" \
+            "| \`aarch64-linux\` | ✅ \`${arm}\` | [\`app-${VERSION}-linux-arm64.asar.gz\`](${base}/download/v${VERSION}/app-${VERSION}-linux-arm64.asar.gz) |")
+          export BLOCK="$block"
+
+          # Rewrite the marked block only; the rest of the readme is hand written.
+          awk '
+            /<!-- BEGIN PACKAGED -->/ { print; print ENVIRON["BLOCK"]; print ""; inside = 1; next }
+            /<!-- END PACKAGED -->/ { inside = 0 }
+            !inside { print }
+          ' README.md > README.md.new
+          mv README.md.new README.md
+
+          git diff -- README.md
+
       - name: Commit, tag and push
         if: steps.apply.outputs.changed == 'true'
         env:
@@ -218,7 +254,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           gh auth setup-git
 
-          git add xmcl.nix
+          git add xmcl.nix README.md
           git commit -m "v${VERSION}"
 
           # Upstream tags its releases as v<version>, so tag this commit the
