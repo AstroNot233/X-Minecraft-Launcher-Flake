@@ -1,1 +1,6 @@
 result
+
+# Left behind by .github/scripts/ when it is replayed locally.
+hash.env
+sources.json.new
+readme.new

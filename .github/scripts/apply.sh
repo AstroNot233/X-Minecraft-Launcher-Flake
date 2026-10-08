@@ -3,7 +3,7 @@
 # Apply what the resolve and hash jobs found: the version of every channel, the
 # hashes that changed, and an update date for the channels that moved.
 #
-# Requires VERSION_<CHANNEL>, HASHES_DIR and GITHUB_OUTPUT.
+# Requires VERSIONS, HASHES_DIR and GITHUB_OUTPUT.
 set -euo pipefail
 
 source "$(dirname "$0")/config.sh"
@@ -17,10 +17,15 @@ while read -r channel; do
   pinned="$(pinned_version "$channel")"
 
   if [ -z "$version" ]; then
-    if [ -n "$pinned" ]; then
-      echo "${channel}: gone upstream, dropping the pin"
+    if [ -z "$pinned" ]; then
+      continue
+    fi
+    if [ "$(channel_optional "$channel")" = "true" ]; then
+      echo "${channel}: gone upstream, dropping the optional pin"
       sources_update --arg c "$channel" '.[$c] = null'
       moved="$moved $channel"
+    else
+      echo "::warning::${channel}: upstream has nothing to pin, keeping ${pinned}"
     fi
     continue
   fi
@@ -45,6 +50,10 @@ files=("$HASHES_DIR"/*/hash.env)
 for file in "${files[@]}"; do
   while read -r channel system got; do
     [ -n "$channel" ] || continue
+    [ -n "$(pinned_version "$channel")" ] || {
+      echo "::error::${channel}: a hash was reported for a channel with no pinned version"
+      exit 1
+    }
     sources_update --arg c "$channel" --arg s "$system" --arg h "$got" \
       '.[$c].hash = ((.[$c].hash // {}) | .[$s] = $h)'
     [ "$(pinned_hash "$channel" "$system")" = "$got" ] || {
@@ -58,7 +67,9 @@ done
 
 printf '%s\n' "$moved" | tr ' ' '\n' | sort -u | while read -r channel; do
   [ -n "$channel" ] || continue
-  sources_update --arg c "$channel" --arg d "$today" 'if .[$c] == null then . else .[$c].updated = $d end'
+  # A channel that was just dropped has nothing to stamp.
+  [ -n "$(pinned_version "$channel")" ] || continue
+  sources_update --arg c "$channel" --arg d "$today" '.[$c].updated = $d'
   echo "${channel}: updated ${today}"
 done
 

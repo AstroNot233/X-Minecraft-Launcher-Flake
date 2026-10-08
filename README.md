@@ -112,9 +112,9 @@ inputs.xmcl.url = "github:AstroNot233/X-Minecraft-Launcher-Flake?ref=v0.71.0";
 | --- | --- |
 | `packages.<system>.default` | Alias of `release`. |
 | `packages.<system>.release` | The release launcher (`xmcl`), wrapped in an FHS environment with its desktop entry. |
-| `packages.<system>.preview` | The preview launcher (`xmcl-preview`). |
 | `packages.<system>.asar` | Unwrapped release archive; the update workflow builds it to verify a hash. |
-| `packages.<system>.asar-preview` | Unwrapped preview archive. |
+| `packages.<system>.preview` | The preview launcher (`xmcl-preview`); exists only while upstream has a prerelease. |
+| `packages.<system>.asar-preview` | Unwrapped preview archive; same condition. |
 | `homeModules` | home-manager module (see Options). |
 
 ## 更新机制 How updates work
@@ -124,15 +124,18 @@ inputs.xmcl.url = "github:AstroNot233/X-Minecraft-Launcher-Flake?ref=v0.71.0";
 and the work itself in [`.github/scripts/`](./.github/scripts):
 
 1. `resolve` reads the upstream releases API and picks the newest release for the `release` channel and the
-   newest prerelease for `preview`, refusing anything that is not a plain version string. A failed API call
-   keeps the pinned channels instead of dropping them.
+   newest prerelease for `preview`, refusing anything that is not a plain version string. A failed call, or a
+   window that has no matching release, keeps the pin instead of dropping it, and a version older than the
+   pinned one is ignored.
 2. `hash` runs once per system (`ubuntu-latest`, `ubuntu-24.04-arm`), pins each channel's version, builds its
    `asar`, and takes the hash nix asks for out of the `hash mismatch` report. A runner can only hash its own
-   system: the other one reports `platform mismatch`. Each job hands its pairs over as an artifact.
+   system: the other one reports `platform mismatch`. Every hash it reports is then built again with that
+   hash, which is the only check the other system's hash ever gets. Each job hands its pairs over as an
+   artifact.
 3. `publish` applies the versions and hashes to `sources.json`, rebuilds every pinned channel to verify
    them, refreshes the table above, and commits `v<version>` together with the matching tags.
 
-`nix build .#release` and `nix build .#preview` fail with a clear message while a channel is not pinned;
-`preview` is `null` in `sources.json` whenever upstream has no prerelease. Nothing is committed when nothing
-moved, and a rerun at the same version means upstream replaced an artifact, in which case the hash is
-corrected and its tag follows.
+Only `preview` may disappear: it is `null` in `sources.json` while upstream has no prerelease, and its
+outputs are then absent. `release` is never dropped — upstream having nothing to pin is not a reason to
+unpin the launcher everybody installs. Nothing is committed when nothing moved, and a rerun at the same
+version means upstream replaced an artifact, in which case the hash is corrected and its tag follows.

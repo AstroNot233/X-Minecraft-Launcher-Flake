@@ -1,5 +1,6 @@
 {
   callPackage,
+  lib,
   symlinkJoin,
   channel ? "release",
   launchEnv ? { },
@@ -17,6 +18,14 @@ symlinkJoin {
     desktop
   ];
   meta = {
-
+    description = "X Minecraft Launcher (${channel} channel)";
+    homepage = "https://xmcl.app";
+    license = lib.licenses.mit;
+    # What `nix run` executes; the wrapper is named after the channel.
+    mainProgram = if channel == "release" then "xmcl" else "xmcl-${channel}";
+    platforms = [
+      "x86_64-linux"
+      "aarch64-linux"
+    ];
   };
 }

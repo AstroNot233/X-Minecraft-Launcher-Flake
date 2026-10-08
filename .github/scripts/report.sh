@@ -43,6 +43,14 @@ block="$(
 )"
 
 export BLOCK="$block"
+
+# Without both markers the rewrite below would drop everything that follows the
+# opening one.
+grep -qF -- "$MARKER_BEGIN" "$README_FILE" && grep -qF -- "$MARKER_END" "$README_FILE" || {
+  echo "::error::${README_FILE} is missing one of the packaged markers"
+  exit 1
+}
+
 awk '
   index($0, ENVIRON["MARKER_BEGIN"]) == 1 { print; print ENVIRON["BLOCK"]; print ""; inside = 1; next }
   index($0, ENVIRON["MARKER_END"]) == 1 { inside = 0 }

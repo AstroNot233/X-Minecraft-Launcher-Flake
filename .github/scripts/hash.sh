@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
 # One system: pin the version each channel is at upstream, build it, and read
-# the hash nix asks for out of the mismatch report. A build without a mismatch
-# means the pinned hash is still the right one.
-#
-# Requires SYSTEM, VERSIONS, GITHUB_OUTPUT; writes hash.env with one
+# the hash nix asks for out of the mismatch report; a build without a mismatch
+# means the pinned hash is still the right one. Writes hash.env with one
 # "<channel> <system> <hash>" line per hash that has to change.
+#
+# Requires SYSTEM and VERSIONS.
 set -euo pipefail
 
 source "$(dirname "$0")/config.sh"
@@ -41,6 +41,16 @@ while read -r channel; do
   if [ -z "$got" ]; then
     printf '%s\n' "$log"
     echo "::error::no hash mismatch reported for ${channel} on ${SYSTEM}"
+    exit 1
+  fi
+
+  # The hash was scraped from a failed build, so prove it: pin it and build
+  # again. This is the only check the other system's hash ever gets, since no
+  # runner can build for it.
+  sources_update --arg c "$channel" --arg s "$SYSTEM" --arg h "$got" \
+    '.[$c].hash = ((.[$c].hash // {}) | .[$s] = $h)'
+  if ! nix build ".#${attr}" >/dev/null 2>&1; then
+    echo "::error::the hash reported for ${channel} on ${SYSTEM} does not verify"
     exit 1
   fi
 

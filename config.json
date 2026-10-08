@@ -16,6 +16,7 @@
     {
       "name": "preview",
       "prerelease": true,
+      "optional": true,
       "attr": "asar-preview"
     }
   ],

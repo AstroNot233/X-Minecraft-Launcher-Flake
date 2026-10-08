@@ -21,7 +21,10 @@ fi
 
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-git commit -m "v${subject}"
+# -c/--no-gpg-sign: a checkout with commit.gpgSign or tag.gpgSign set (this is
+# the case when the script is replayed locally) would otherwise sign with
+# somebody's key and stop for a passphrase.
+git commit --no-gpg-sign -m "v${subject}"
 
 # Upstream tags its releases as v<version>, so tag the same way and the flake
 # can be pinned as ...?ref=v<version>. A version that is already tagged is moved
@@ -40,11 +43,13 @@ while read -r channel; do
   esac
   tagged="$tagged $version"
 
-  if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
-    git tag -f -a "v${version}" -m "xmcl ${version}"
+  # The CI checkout has no tags (actions/checkout fetches with --no-tags), so
+  # ask the remote: pushing an existing tag without force fails the atomic push.
+  if git ls-remote --exit-code --refs origin "refs/tags/v${version}" >/dev/null 2>&1; then
+    git -c tag.gpgSign=false tag -f -a "v${version}" -m "xmcl ${version}"
     refs+=("+refs/tags/v${version}")
   else
-    git tag -a "v${version}" -m "xmcl ${version}"
+    git -c tag.gpgSign=false tag -a "v${version}" -m "xmcl ${version}"
     refs+=("refs/tags/v${version}")
   fi
 done < <(channel_names)

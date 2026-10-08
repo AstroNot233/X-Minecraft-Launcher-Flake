@@ -2,7 +2,7 @@
 
 # config.json, read once. Sourced, it puts the values in the caller's
 # environment; run directly — the workflow's "Load config" step — it also
-# publishes the matrix and the marker strings as step outputs.
+# publishes the job matrix as a step output.
 #
 # Set CONFIG_FILE to read a different file.
 
@@ -48,6 +48,11 @@ channel_attr() {
   jq -r --arg c "$1" '.channels[] | select(.name == $c) | .attr' "$CONFIG_FILE"
 }
 
+# Whether a channel may disappear from upstream (default: no).
+channel_optional() {
+  jq -r --arg c "$1" '.channels[] | select(.name == $c) | (.optional // false)' "$CONFIG_FILE"
+}
+
 # Asset suffix upstream uses for a system: linux, linux-arm64, …
 system_asset() {
   jq -r --arg s "$1" '.systems[] | select(.name == $s) | .asset' "$CONFIG_FILE"
@@ -56,9 +61,6 @@ system_asset() {
 config_load
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-  {
-    printf 'matrix=%s\n' "$(jq -c '{include: .systems}' "$CONFIG_FILE")"
-    printf 'marker_begin=%s\n' "$MARKER_BEGIN"
-    printf 'marker_end=%s\n' "$MARKER_END"
-  } >> "${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
+  printf 'matrix=%s\n' "$(jq -c '{include: .systems}' "$CONFIG_FILE")" \
+    >> "${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}"
 fi

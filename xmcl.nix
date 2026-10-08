@@ -6,7 +6,11 @@
   ...
 }:
 let
+  # config.json names the upstream repository and the asset suffix per system;
+  # sources.json is what the update workflow pins.
+  config = builtins.fromJSON (builtins.readFile ./config.json);
   sources = builtins.fromJSON (builtins.readFile ./sources.json);
+
   pinned =
     let
       entry = sources.${channel} or null;
@@ -15,22 +19,26 @@ let
       throw "xmcl: no ${channel} release is pinned in sources.json"
     else
       entry;
+
+  system = stdenv.hostPlatform.system;
+  assets = builtins.listToAttrs (
+    map (s: {
+      name = s.name;
+      value = s.asset;
+    }) config.systems
+  );
+  suffix = assets.${system} or (throw "Unsupported system: ${system}");
+  version = pinned.version;
 in
 stdenv.mkDerivation {
   pname = "xmcl-asar";
-  version = pinned.version;
+  version = version;
   src =
     let
-      base = "https://github.com/Voxelum/x-minecraft-launcher/releases/download/v${pinned.version}";
-      artifacts = {
-        x86_64-linux = "linux";
-        aarch64-linux = "linux-arm64";
-      };
-      system = stdenv.hostPlatform.system;
-      suffix = artifacts.${system} or (throw "Unsupported system: ${system}");
+      base = "${config.upstream_repo}/releases/download/v${version}";
     in
     fetchurl {
-      url = "${base}/app-${pinned.version}-${suffix}.asar.gz";
+      url = "${base}/app-${version}-${suffix}.asar.gz";
       hash = pinned.hash.${system} or (throw "No ${channel} hash for ${system}");
     };
   nativeBuildInputs = [
