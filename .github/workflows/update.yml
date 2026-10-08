@@ -1,0 +1,237 @@
+name: update
+
+on:
+  # Upstream releases at their own pace; a weekly check is enough.
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A scheduled run and a manual one must not push over each other.
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - id: resolve
+        name: Resolve the latest upstream version
+        run: |
+          set -euo pipefail
+
+          repo=https://github.com/Voxelum/x-minecraft-launcher
+
+          # The version comes from the electron-builder manifest that the
+          # launcher updates itself with: releases/latest/download/... resolves
+          # to the newest release without going through the GitHub API, whose
+          # anonymous rate limit is shared between runners.
+          manifest=$(nix store prefetch-file --json \
+            "$repo/releases/latest/download/latest-linux.yml" |
+            sed -n 's/.*"storePath":"\([^"]*\)".*/\1/p') || true
+          [ -n "$manifest" ] || { echo "cannot fetch the release manifest" >&2; exit 1; }
+
+          # This value is upstream data that ends up inside xmcl.nix, so accept
+          # only characters that are safe both in a shell word and in a Nix
+          # string: that rules out quotes, backticks, '$', braces, spaces and
+          # the like. Dots, dashes, underscores and plus signs stay, so a
+          # version such as 0.72.0-beta.1 or 0.72.0+build.5 is fine.
+          version=$(sed -n 's/^version: //p' "$manifest" | head -n1)
+          printf '%s' "$version" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._+-]*$' || {
+            echo "refusing version '${version}' from the release manifest" >&2
+            exit 1
+          }
+
+          echo "upstream: ${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+  hash:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          # Each platform is hashed on a machine of its own: pinning the version
+          # makes the build fetch that release's artifact, and the mismatch
+          # report is where the wanted hash comes from. Asking a runner for the
+          # other platform's hash cannot work, it only reports "platform
+          # mismatch". The two jobs hand their hash over through an artifact, so
+          # they never write to xmcl.nix at the same time.
+          #
+          # This runs even when the version is unchanged: upstream does not
+          # freeze a release, so the artifact behind a version can be replaced.
+          - runner: ubuntu-latest
+            suffix: linux
+          - runner: ubuntu-24.04-arm
+            suffix: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Read the hash this platform needs
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          suffix="${{ matrix.suffix }}"
+          case "$VERSION" in
+          "" | *[!A-Za-z0-9._+-]*)
+            echo "refusing version '${VERSION}'" >&2
+            exit 1
+            ;;
+          esac
+
+          sed -i "s|version = \"[^\"]*\";|version = \"${VERSION}\";|" xmcl.nix
+          grep -qF "version = \"${VERSION}\";" xmcl.nix || {
+            echo "xmcl.nix has no version line of the form 'version = \"...\";'" >&2
+            exit 1
+          }
+
+          # The push job collects one of these per platform; an empty file means
+          # "the pinned hash is still the one nix wants".
+          : > hash.env
+
+          if log=$(nix build .#asar 2>&1); then
+            echo "${suffix}: hash unchanged"
+          else
+            # The report reads
+            #     specified: sha256-...
+            #        got:    sha256-...
+            specified=$(printf '%s\n' "$log" | sed -n 's/.*specified: *//p' | tail -n1)
+            got=$(printf '%s\n' "$log" | sed -n 's/.*got: *//p' | tail -n1)
+            [ -n "$specified" ] && [ -n "$got" ] || {
+              printf '%s\n' "$log"
+              echo "no hash mismatch reported for ${suffix}" >&2
+              exit 1
+            }
+
+            echo "${suffix}: ${specified} -> ${got}"
+
+            # Hand the pair over to the push job. Both hashes are SRI, so the
+            # push job can replace one with the other as plain strings.
+            printf 'SPECIFIED=%s\nGOT=%s\n' "$specified" "$got" >> hash.env
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hash-${{ matrix.suffix }}
+          path: hash.env
+
+  push:
+    needs: [version, hash]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: hashes
+
+      - id: apply
+        name: Apply the new version and hashes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Same character set as the version job: whatever the resolved version
+          # looks like, it must contain nothing that could act as shell syntax
+          # or as Nix interpolation.
+          case "$VERSION" in
+          "" | *[!A-Za-z0-9._+-]*)
+            echo "refusing version '${VERSION}'" >&2
+            exit 1
+            ;;
+          esac
+
+          sed -i "s|version = \"[^\"]*\";|version = \"${VERSION}\";|" xmcl.nix
+          grep -qF "version = \"${VERSION}\";" xmcl.nix || {
+            echo "xmcl.nix has no version line of the form 'version = \"...\";'" >&2
+            exit 1
+          }
+
+          # Every hash job uploads one file; an empty one means "unchanged".
+          # Insist on both of them, or a missing artifact would silently update
+          # only one platform.
+          shopt -s nullglob
+          envs=(hashes/*/hash.env)
+          [ "${#envs[@]}" -eq 2 ] || {
+            echo "expected 2 hash.env artifacts, found ${#envs[@]}: ${envs[*]}" >&2
+            exit 1
+          }
+
+          # A hash string occurs exactly once in xmcl.nix, so it can be replaced
+          # without matching on the lines around it.
+          for file in "${envs[@]}"; do
+            unset SPECIFIED GOT
+            # shellcheck source=/dev/null
+            . "$file"
+            [ -n "${SPECIFIED:-}" ] && [ -n "${GOT:-}" ] || continue
+
+            sed -i "s|${SPECIFIED}|${GOT}|" xmcl.nix
+            # A hash written in another form (hex instead of SRI) would make the
+            # line above silently change nothing, so insist on the new value.
+            grep -qF -- "$GOT" xmcl.nix || { echo "cannot replace ${SPECIFIED}" >&2; exit 1; }
+            echo "${SPECIFIED} -> ${GOT}"
+          done
+
+          # Only xmcl.nix is committed below, so anything else that happens to
+          # be dirty in the tree must not flip this switch.
+          if git diff --quiet -- xmcl.nix; then
+            echo "xmcl.nix is up to date"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff -- xmcl.nix
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fails if a hash written above does not match the artifact it names.
+      - name: Verify the new hash
+        if: steps.apply.outputs.changed == 'true'
+        run: nix build .#asar
+
+      # Catches evaluation errors without paying for the FHS environment build.
+      - name: Check the flake still evaluates
+        if: steps.apply.outputs.changed == 'true'
+        run: nix build --dry-run .#default
+
+      - name: Commit, tag and push
+        if: steps.apply.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh auth setup-git
+
+          git add xmcl.nix
+          git commit -m "v${VERSION}"
+
+          # Tag the commit with the version it packages, so the flake can be
+          # pinned as github:AstroNot233/X-Minecraft-Launcher-Flake?ref=<version>.
+          # A run that fires again for the same version means upstream replaced
+          # the artifact behind it; the tag has to follow the corrected hash.
+          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+            git tag -f -a "${VERSION}" -m "xmcl ${VERSION}"
+            tag="+refs/tags/${VERSION}"
+          else
+            git tag -a "${VERSION}" -m "xmcl ${VERSION}"
+            tag="refs/tags/${VERSION}"
+          fi
+
+          # One atomic push: the branch and its tag land together or not at all.
+          git push --atomic origin HEAD "${tag}"
