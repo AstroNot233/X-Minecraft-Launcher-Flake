@@ -221,17 +221,18 @@ jobs:
           git add xmcl.nix
           git commit -m "v${VERSION}"
 
-          # Tag the commit with the version it packages, so the flake can be
-          # pinned as github:AstroNot233/X-Minecraft-Launcher-Flake?ref=<version>.
+          # Upstream tags its releases as v<version>, so tag this commit the
+          # same way: the flake can then be pinned as
+          # github:AstroNot233/X-Minecraft-Launcher-Flake?ref=v<version>.
           # A run that fires again for the same version means upstream replaced
           # the artifact behind it; the tag has to follow the corrected hash.
-          if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
-            git tag -f -a "${VERSION}" -m "xmcl ${VERSION}"
-            tag="+refs/tags/${VERSION}"
+          tagref="refs/tags/v${VERSION}"
+          if git rev-parse -q --verify "$tagref" >/dev/null; then
+            git tag -f -a "v${VERSION}" -m "xmcl ${VERSION}"
+            tagref="+${tagref}"
           else
-            git tag -a "${VERSION}" -m "xmcl ${VERSION}"
-            tag="refs/tags/${VERSION}"
+            git tag -a "v${VERSION}" -m "xmcl ${VERSION}"
           fi
 
           # One atomic push: the branch and its tag land together or not at all.
-          git push --atomic origin HEAD "${tag}"
+          git push --atomic origin HEAD "$tagref"
