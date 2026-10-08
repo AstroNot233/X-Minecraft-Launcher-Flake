@@ -1,0 +1,11 @@
+{
+  "release": {
+    "version": "0.71.0",
+    "updated": "2026-10-08",
+    "hash": {
+      "x86_64-linux": "sha256-fq8uYmsjJEM913b3/eoEFN0scj+4zfqsowN/zYcMfNM=",
+      "aarch64-linux": "sha256-4kiOOLey3WxlowoAfThbBhhvxHVt3F3CSxvqOSXWjBo="
+    }
+  },
+  "preview": null
+}

@@ -2,15 +2,17 @@
   buildFHSEnv,
   callPackage,
   lib,
+  channel ? "release",
   launchEnv ? { },
   launchArg ? [ ],
   ...
 }:
 let
-  xmcl = callPackage ./xmcl.nix { };
+  xmcl = callPackage ./xmcl.nix { inherit channel; };
 in
 buildFHSEnv {
-  name = "xmcl";
+  # The release keeps the plain name; a preview is installed next to it.
+  name = if channel == "release" then "xmcl" else "xmcl-${channel}";
   targetPkgs =
     pkgs: with pkgs; [
       # For XMCL

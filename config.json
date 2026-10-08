@@ -1,0 +1,34 @@
+{
+  "upstream_repo": "https://github.com/Voxelum/x-minecraft-launcher",
+  "version_fmt": "[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?",
+  "sources_file": "sources.json",
+  "readme_file": "README.md",
+  "readme_markers": [
+    "<!-- BEGIN PACKAGED -->",
+    "<!-- END PACKAGED -->"
+  ],
+  "channels": [
+    {
+      "name": "release",
+      "prerelease": false,
+      "attr": "asar"
+    },
+    {
+      "name": "preview",
+      "prerelease": true,
+      "attr": "asar-preview"
+    }
+  ],
+  "systems": [
+    {
+      "name": "x86_64-linux",
+      "asset": "linux",
+      "runner": "ubuntu-latest"
+    },
+    {
+      "name": "aarch64-linux",
+      "asset": "linux-arm64",
+      "runner": "ubuntu-24.04-arm"
+    }
+  ]
+}

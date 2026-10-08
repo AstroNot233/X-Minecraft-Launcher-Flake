@@ -11,6 +11,15 @@ in
 {
   options.programs.xmcl = {
     enable = mkEnableOption "X Minecraft Launcher";
+    channel = mkOption {
+      type = with lib.types; enum [ "release" "preview" ];
+      default = "release";
+      description = ''
+        Which upstream channel to install: the latest release, or the latest
+        preview, which lands next to it as `xmcl-preview`.
+      '';
+      example = "preview";
+    };
     jres = mkOption {
       type = with lib.types; listOf package;
       default = [ ];
@@ -42,18 +51,23 @@ in
   };
 
   config =
-    with config.programs.xmcl;
-    mkIf enable {
-      home.packages = [ (pkgs.callPackage ./package.nix { inherit launchEnv launchArg; }) ];
-      xdg.desktopEntries.xmcl = {
+    let
+      cfg = config.programs.xmcl;
+      release = cfg.channel == "release";
+      bin = if release then "xmcl" else "xmcl-${cfg.channel}";
+      label = if release then "X Minecraft Launcher" else "X Minecraft Launcher (Preview)";
+    in
+    mkIf cfg.enable {
+      home.packages = [ (pkgs.callPackage ./package.nix { inherit (cfg) channel launchEnv launchArg; }) ];
+      xdg.desktopEntries.${bin} = {
         categories = [ "Game" ];
-        exec = "xmcl";
+        exec = bin;
         icon = ./logo.png;
-        name = "X Minecraft Launcher";
+        name = label;
         terminal = false;
         type = "Application";
       };
-      xdg.configFile."xmcl/java.json" = mkIf (jres != [ ]) {
+      xdg.configFile."xmcl/java.json" = mkIf (cfg.jres != [ ]) {
         text = builtins.toJSON {
           all = builtins.map (jre: rec {
             path = "${jre}/bin/java";
@@ -62,7 +76,7 @@ in
               with lib;
               with versions;
               toInt ((if (toInt (major version) == 1) then minor else major) version);
-          }) jres;
+          }) cfg.jres;
         };
       };
     };

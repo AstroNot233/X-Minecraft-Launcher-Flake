@@ -2,28 +2,37 @@
   stdenv,
   fetchurl,
   gzip,
+  channel ? "release",
   ...
 }:
-stdenv.mkDerivation rec {
+let
+  sources = builtins.fromJSON (builtins.readFile ./sources.json);
+  pinned =
+    let
+      entry = sources.${channel} or null;
+    in
+    if entry == null then
+      throw "xmcl: no ${channel} release is pinned in sources.json"
+    else
+      entry;
+in
+stdenv.mkDerivation {
   pname = "xmcl-asar";
-  version = "0.71.0";
+  version = pinned.version;
   src =
     let
-      base = "https://github.com/Voxelum/x-minecraft-launcher/releases/download/v${version}";
-      gzs = {
-        x86_64-linux = {
-          url = "${base}/app-${version}-linux.asar.gz";
-          hash = "sha256-fq8uYmsjJEM913b3/eoEFN0scj+4zfqsowN/zYcMfNM=";
-        };
-        aarch64-linux = {
-          url = "${base}/app-${version}-linux-arm64.asar.gz";
-          hash = "sha256-4kiOOLey3WxlowoAfThbBhhvxHVt3F3CSxvqOSXWjBo=";
-        };
+      base = "https://github.com/Voxelum/x-minecraft-launcher/releases/download/v${pinned.version}";
+      artifacts = {
+        x86_64-linux = "linux";
+        aarch64-linux = "linux-arm64";
       };
-      sys = stdenv.hostPlatform.system;
-      tar = gzs.${sys} or (throw "Unsupported system: ${sys}");
+      system = stdenv.hostPlatform.system;
+      suffix = artifacts.${system} or (throw "Unsupported system: ${system}");
     in
-    fetchurl tar;
+    fetchurl {
+      url = "${base}/app-${pinned.version}-${suffix}.asar.gz";
+      hash = pinned.hash.${system} or (throw "No ${channel} hash for ${system}");
+    };
   nativeBuildInputs = [
     gzip
   ];
